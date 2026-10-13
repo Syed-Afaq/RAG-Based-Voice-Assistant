@@ -5,7 +5,7 @@ Instead:
 
 * every currency amount in the retrieved text is labelled by the product named in its sentence,
   or as the delivery fee when the sentence talks about delivery;
-* durations ("2–3 working days", "48 hours") are listed with the clause they came from;
+* durations ("2–3 working days", "48 hours") are listed with the words that precede them;
 * when the question combines products, quantities or delivery, the total is computed here and
   handed to the model as an explicit ``COMPUTED:`` line to phrase;
 * otherwise the labelled figures go to the model as a ``FACTS:`` block so it reasons from clean
@@ -28,7 +28,13 @@ PRICE_WORDS = re.compile(
     r"\b(cost|costs|price|prices|pay|total|how much|charge|charges|fee|fees)\b", re.IGNORECASE
 )
 DELIVERY_WORDS = re.compile(r"\b(deliver\w*|shipping|ship|shipped|postage)\b", re.IGNORECASE)
+TIME_WORDS = re.compile(
+    r"\b(how long|when|days?|hours?|weeks?|months?|years?|time|takes?|arrive\w*|within|deadline|"
+    r"late|ago|long|battery life|last)\b",
+    re.IGNORECASE,
+)
 _PER_UNIT = re.compile(r"\bper\s+(\w+)\b", re.IGNORECASE)
+_SNIPPET_WORDS = 6  # words of context kept before a duration in the FACTS block
 _NUMBER_WORD = "|".join(sorted(NUMBER_WORDS, key=len, reverse=True))
 _DURATION = re.compile(
     rf"\b(\d+(?:\s?[–—-]\s?\d+)?|(?:{_NUMBER_WORD})(?:[-\s](?:{_NUMBER_WORD}))?)\s+"
@@ -60,14 +66,14 @@ class Amount:
 
 @dataclass(frozen=True)
 class Duration:
-    """A time span and the clause it was stated in."""
+    """A time span with the few words that precede it, e.g. "Delivery to Islamabad takes"."""
 
     text: str  # "2–3 working days"
-    clause: str  # "Delivery to Islamabad takes 2–3 working days"
+    snippet: str  # "Delivery to Islamabad takes 2–3 working days"
 
     def describe(self) -> str:
-        """``2–3 working days (Delivery to Islamabad takes 2–3 working days)``."""
-        return f"{self.text} ({self.clause})"
+        """The snippet itself; it already contains the duration."""
+        return self.snippet
 
 
 @dataclass(frozen=True)
@@ -126,6 +132,15 @@ class Computed:
         return f"COMPUTED: {' + '.join(parts)} = {self.currency} {format_amount(self.total)}."
 
 
+def is_numeric_question(question: str) -> bool:
+    """True when the question is about money or time, so parsed figures are worth sending.
+
+    The FACTS block costs prompt tokens (CPU prompt processing is the slowest stage), so it is only
+    attached when the question's vocabulary suggests the model will need figures.
+    """
+    return bool(PRICE_WORDS.search(question) or TIME_WORDS.search(question))
+
+
 def _clauses(sentence: str) -> list[str]:
     return [c.strip(" .") for c in sentence.split(";") if c.strip(" .")]
 
@@ -155,7 +170,9 @@ def parse_facts(retrieved: list[Retrieved], products: list[Product]) -> Facts:
             amounts.append(Amount(label, currency, value, per.group(1) if per else None, product))
         for clause in _clauses(sentence):
             for match in _DURATION.finditer(clause):
-                durations.append(Duration(text=match.group(0), clause=clause))
+                lead = clause[: match.start()].split()[-_SNIPPET_WORDS:]
+                snippet = " ".join([*lead, match.group(0)])
+                durations.append(Duration(text=match.group(0), snippet=snippet))
     return Facts(amounts=amounts, durations=durations)
 
 

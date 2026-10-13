@@ -1,9 +1,13 @@
 """Build, persist and refresh the local vector index over the knowledge base.
 
-Chunking: one sentence per chunk. Sentences are split only at ``.``, ``!`` or ``?`` followed by
-whitespace. Semicolon clauses such as "Delivery to Islamabad takes 2–3 working days; Lahore takes
-3–5 working days." stay together on purpose: splitting them would leave "Lahore takes 3–5 working
-days" without the word "delivery", which is the term a question will mention.
+Chunking: one sentence per chunk, with two deliberate exceptions so every chunk names its subject:
+
+* Semicolon clauses such as "Delivery to Islamabad takes 2–3 working days; Lahore takes 3–5
+  working days." stay together; splitting them would leave "Lahore takes 3–5 working days" without
+  the word "delivery", which is the term a question will mention.
+* A sentence that starts with a pronoun ("It uses USB-C power...") is merged into the sentence
+  before it, which is the one that names the product. On its own it would be ambiguous to both the
+  retriever and the model.
 
 Freshness: the metadata stores a SHA-256 of every KB file plus the embedding model name and the
 chunking version. On load, anything that differs triggers a rebuild, and the caller is told why.
@@ -28,16 +32,25 @@ from voice_rag.types import Chunk
 
 log = logging.getLogger(__name__)
 
-CHUNKING_VERSION = 1
+CHUNKING_VERSION = 2
 EMBEDDINGS_FILE = "embeddings.npy"
 META_FILE = "meta.json"
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+_PRONOUN_START = re.compile(r"^(It|Its|They|Their|This|These|That|Those)\b")
 
 
 def split_sentences(text: str) -> list[str]:
-    """Split text into trimmed sentences, dropping empty pieces."""
-    return [s.strip() for s in _SENTENCE_END.split(text.strip()) if s.strip()]
+    """Split text into trimmed sentences, merging pronoun-led sentences into the previous one."""
+    chunks: list[str] = []
+    for sentence in (s.strip() for s in _SENTENCE_END.split(text.strip())):
+        if not sentence:
+            continue
+        if chunks and _PRONOUN_START.match(sentence):
+            chunks[-1] = f"{chunks[-1]} {sentence}"
+        else:
+            chunks.append(sentence)
+    return chunks
 
 
 def chunk_file(path: Path) -> list[Chunk]:

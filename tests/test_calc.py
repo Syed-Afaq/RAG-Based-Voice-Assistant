@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from voice_rag.calc import compute_total, parse_facts, requested_quantities
+from voice_rag.calc import compute_total, is_numeric_question, parse_facts, requested_quantities
 from voice_rag.products import Product
 from voice_rag.types import Chunk, Retrieved
 
@@ -34,8 +34,17 @@ def test_parse_facts_labels_amounts_and_durations() -> None:
         "seven days",
         "48 hours",
     ]
-    assert facts.durations[2].clause == "Lahore takes 3–5 working days"
+    assert facts.durations[2].snippet == "Lahore takes 3–5 working days"
+    assert facts.durations[4].snippet == "Damaged items must be reported within 48 hours"
     assert facts.block().startswith("FACTS (parsed from the passages):\n- L1 desk lamp: PKR 2,500")
+
+
+def test_is_numeric_question() -> None:
+    assert is_numeric_question("How much does the lamp cost?")
+    assert is_numeric_question("How long does delivery take?")
+    assert is_numeric_question("Can I return it after 10 days?")
+    assert not is_numeric_question("Does the L1 lamp have a battery?")
+    assert not is_numeric_question("Can you ship to London?")
 
 
 def test_facts_block_empty_without_figures() -> None:

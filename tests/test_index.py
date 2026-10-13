@@ -26,6 +26,15 @@ def test_split_sentences_keeps_semicolon_clauses_together() -> None:
     ]
 
 
+def test_pronoun_sentence_merges_into_previous_chunk() -> None:
+    text = "The L1 desk lamp costs PKR 2,500. It uses USB-C power. The S1 speaker costs PKR 4,000."
+    assert split_sentences(text) == [
+        "The L1 desk lamp costs PKR 2,500. It uses USB-C power.",
+        "The S1 speaker costs PKR 4,000.",
+    ]
+    assert split_sentences("It starts with a pronoun.") == ["It starts with a pronoun."]
+
+
 def test_split_sentences_ignores_blank_input() -> None:
     assert split_sentences("  \n ") == []
 

@@ -12,7 +12,8 @@ Output side:
       appears literally, or it is a sum/difference of up to three currency amounts from the
       context, optionally multiplied by a small quantity stated in the question. That lets a
       correct total the model worked out pass, while an invented "one year warranty" still fails
-      (durations are never combined, so 1 cannot be derived from "2–3 days").
+      (durations are never combined, so 1 cannot be derived from "2–3 days"). Figures the user
+      typed in the question are also accepted, so "10 days ago" can be answered.
 
 Off-topic questions are not rejected here: retrieval falls back to sending every passage when
 confidence is low, and the prompt rules tell the model to say when the documents do not answer.
@@ -43,8 +44,12 @@ _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
         re.compile(r"\b(pretend|act as if|imagine)\b", re.IGNORECASE),
     ),
     ("tries to reassign the assistant's role", re.compile(r"\byou are now\b", re.IGNORECASE)),
-    ("claims a new system prompt", re.compile(r"\bsystem prompt\b", re.IGNORECASE)),
+    (
+        "asks for the instructions",
+        re.compile(r"\b(system prompt|your (instructions|rules|prompt))\b", re.IGNORECASE),
+    ),
 ]
+LEAK_LABEL = "asks for the instructions"
 
 _PRICE_QUESTION = re.compile(
     r"\b(cost|costs|price|prices|pricing|how much|charge|charges|fee|fees)\b", re.IGNORECASE
@@ -116,6 +121,7 @@ def unsupported_figures(answer: str, supporting_texts: list[str], question: str 
     for text in supporting_texts:
         allowed |= extract_numbers(text)
     allowed |= derivable_amounts(supporting_texts, question)
+    allowed |= extract_numbers(question)  # echoing the user's own figure is not an invention
     unsupported = sorted(extract_numbers(answer) - allowed)
     return [f"{n:g}" for n in unsupported]
 
