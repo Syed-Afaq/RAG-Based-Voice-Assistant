@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "voice-rag"
+version = "0.1.0"
+description = "English voice-response assistant for a fictional online store: local RAG, open-source LLM, Kokoro TTS."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+dependencies = [
+    "ollama",
+    "numpy",
+    "rich",
+    "kokoro",
+    "soundfile",
+    "python-dotenv",
+]
+
+[project.scripts]
+voice-rag = "voice_rag.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "N", "D"]
+ignore = [
+    "D100", # module docstrings are optional
+    "D104", # package docstrings are optional
+    "D203", # one-blank-line-before-class (conflicts with D211)
+    "D213", # multi-line-summary-second-line (conflicts with D212)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+"scripts/*" = ["D"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["voice_rag"]
+# Third-party packages without type stubs.
+[[tool.mypy.overrides]]
+module = ["kokoro.*", "soundfile.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+markers = [
+    "integration: needs a running Ollama server with the models pulled (skipped in CI)",
+]
+addopts = "-m 'not integration'"
