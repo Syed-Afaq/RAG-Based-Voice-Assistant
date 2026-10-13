@@ -22,7 +22,7 @@ def test_env_overrides_are_typed() -> None:
             "VOICE_RAG_LLM_MODEL": "qwen3:1.7b",
             "VOICE_RAG_TOP_K": "2",
             "VOICE_RAG_TEMPERATURE": "0.5",
-            "VOICE_RAG_NUM_THREAD": "6",
+            "VOICE_RAG_NUM_THREAD": "4",
             "VOICE_RAG_KB_DIR": "/tmp/kb",
             "VOICE_RAG_KEEP_ALIVE": "",  # empty means "keep default"
         }
@@ -30,7 +30,7 @@ def test_env_overrides_are_typed() -> None:
     assert s.llm_model == "qwen3:1.7b"
     assert s.top_k == 2
     assert s.temperature == 0.5
-    assert s.num_thread == 6
+    assert s.num_thread == 4
     assert s.kb_dir == Path("/tmp/kb")
     assert s.keep_alive == Settings().keep_alive
 

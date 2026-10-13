@@ -3,7 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from voice_rag.index import chunk_file
-from voice_rag.products import Product, derive_products, mentioned_products
+from voice_rag.products import (
+    Product,
+    derive_products,
+    mentioned_products,
+    product_vocabulary,
+)
 from voice_rag.types import Chunk
 
 
@@ -33,9 +38,19 @@ def test_mentioned_products_by_code_or_head_noun() -> None:
     assert mentioned_products("S1 warranty?", products) == [products[1]]
     assert mentioned_products("How much does it cost?", products) == []
     assert len(mentioned_products("lamp or speaker?", products)) == 2
+    assert mentioned_products("total for both products with delivery?", products) == products
+    assert mentioned_products("do all items ship?", products) == products
 
 
 def test_label_and_aliases() -> None:
     p = Product("S1", "Bluetooth speaker")
     assert p.label == "S1 Bluetooth speaker"
     assert p.aliases == frozenset({"s1", "speaker"})
+
+
+def test_product_vocabulary_is_specific_to_product_passages(kb_dir: Path) -> None:
+    chunks = [c for p in sorted(kb_dir.glob("*.txt")) for c in chunk_file(p)]
+    vocab = product_vocabulary(chunks, derive_products(chunks))
+    assert {"batter", "usb", "power", "bluetooth"} <= vocab
+    assert "cost" not in vocab and "hour" not in vocab and "pkr" not in vocab  # shared words
+    assert "l1" not in vocab  # codes are handled by mentioned_products

@@ -39,3 +39,19 @@ def test_low_confidence_falls_back_to_all_chunks(kb_dir: Path) -> None:
     assert result.low_confidence
     assert result.best_cosine < 0.5
     assert len(result.hits) == result.total_chunks == len(index.chunks)
+
+
+def test_anchor_terms_force_product_passages_in(kb_dir: Path) -> None:
+    embedder = FakeEmbedder()
+    index = build_index(kb_dir, embedder)
+    result = retrieve(
+        index,
+        embedder,
+        "total with delivery?",
+        top_k=1,
+        min_similarity=0.0,
+        anchor_terms=["L1", "S1"],
+    )
+    texts = " ".join(h.chunk.text for h in result.hits)
+    assert "L1" in texts and "S1" in texts
+    assert len(result.hits) == 3

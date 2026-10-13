@@ -3,8 +3,11 @@
 Input side:
     * ``detect_injection``: flags requests to ignore or override policy. The request still runs,
       but the prompt gets a note that the documents take precedence.
-    * ``needs_clarification``: a price question with no product and no other subject gets a
-      clarifying reply without calling the model.
+    * ``needs_clarification``: a price question with no product and no other subject ("How much
+      does it cost?"), or a pronoun question about a product attribute ("Does it have a
+      battery?"), gets a clarifying reply without calling the model. Attribute words are derived
+      from the KB (see ``products.product_vocabulary``), so "Can I return it?" still goes to the
+      model.
 
 Output side:
     * ``unsupported_figures``: every number in the answer must be supported by the retrieved
@@ -25,6 +28,7 @@ import re
 from itertools import combinations
 from itertools import product as cartesian
 
+from voice_rag.lexical import tokenize
 from voice_rag.numbers import extract_amounts, extract_numbers
 from voice_rag.products import Product, mentioned_products
 from voice_rag.types import GuardResult
@@ -75,12 +79,26 @@ def detect_injection(question: str) -> list[str]:
     return [label for label, pattern in _INJECTION_PATTERNS if pattern.search(question)]
 
 
-def needs_clarification(question: str, products: list[Product]) -> bool:
-    """True for a price question whose only subject is a pronoun, e.g. "How much does it cost?"."""
-    if not _PRICE_QUESTION.search(question) or mentioned_products(question, products):
+_PRONOUNS = frozenset({"it", "its", "this", "that", "one"})
+
+
+def needs_clarification(
+    question: str, products: list[Product], product_vocab: frozenset[str] = frozenset()
+) -> bool:
+    """True when the question needs a product to be answerable and names none.
+
+    Two cases: a price question with no subject at all ("How much does it cost?"), and a question
+    that refers to "it"/"this"/"that" and asks about a product attribute, i.e. uses a word from
+    ``product_vocab`` ("Does it have a battery?").
+    """
+    if mentioned_products(question, products):
         return False
     tokens = re.findall(r"[a-z0-9]+", question.lower())
-    return not [t for t in tokens if t not in _FILLER]
+    if _PRICE_QUESTION.search(question) and not [t for t in tokens if t not in _FILLER]:
+        return True
+    if _PRONOUNS & set(tokens):
+        return bool(set(tokenize(question)) & product_vocab)
+    return False
 
 
 def clarification_reply(products: list[Product]) -> str:
@@ -124,6 +142,40 @@ def unsupported_figures(answer: str, supporting_texts: list[str], question: str 
     allowed |= extract_numbers(question)  # echoing the user's own figure is not an invention
     unsupported = sorted(extract_numbers(answer) - allowed)
     return [f"{n:g}" for n in unsupported]
+
+
+_YES_THEN_NO = re.compile(
+    r"\b(you cannot|you can't|cannot (return|report)|can't (return|report)|is past the|"
+    r"is outside|exceeds|no longer|not eligible)\b",
+    re.IGNORECASE,
+)
+_NO_THEN_YES = re.compile(r"\byou can (still )?(return|report)\b(?! ?n[o']t)", re.IGNORECASE)
+
+
+def contradicts_itself(answer: str) -> str | None:
+    """Detect a leading "Yes"/"No" that the rest of the answer reverses; returns a description.
+
+    Small models sometimes open with a reflexive "Yes" and then reason their way to "you cannot".
+    Spoken aloud, the first word is what the customer hears, so such answers are regenerated.
+    """
+    head = answer.strip()[:4].lower()
+    if head.startswith("yes") and _YES_THEN_NO.search(answer):
+        return "answer starts with Yes but concludes No"
+    if head.startswith("no") and _NO_THEN_YES.search(answer):
+        return "answer starts with No but concludes Yes"
+    return None
+
+
+def drop_contradictory_opening(answer: str) -> str:
+    """Remove a leading "Yes, ..."/"No, ..." sentence that the rest of the answer reverses.
+
+    Used only when a regeneration still contradicts itself: the remaining sentences carry the
+    model's actual reasoning and conclusion, so they are kept verbatim.
+    """
+    if contradicts_itself(answer) is None:
+        return answer
+    first, sep, rest = answer.strip().partition(". ")
+    return rest.strip() if sep and rest.strip() else answer
 
 
 def check_output(answer: str, supporting_texts: list[str], question: str = "") -> GuardResult:

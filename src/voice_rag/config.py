@@ -33,7 +33,7 @@ class Settings:
     seed: int = 42
     num_ctx: int = 1024  # prompts are ~450 tokens; 1024 saves ~200 MB over 2048 on this box
     num_predict: int = 120
-    num_thread: int | None = None  # None lets Ollama choose
+    num_thread: int | None = 6  # leaves cores free for other apps (e.g. a video call); None = all
     keep_alive: str = "10m"
 
     # Text-to-speech

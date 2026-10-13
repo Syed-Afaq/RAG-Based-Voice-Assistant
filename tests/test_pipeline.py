@@ -83,7 +83,18 @@ def test_clarification_skips_llm(kb_dir: Path, index_dir: Path) -> None:
     answer = make(kb_dir, index_dir, llm).answer("How much does it cost?")
     assert answer.text == "Which product do you mean: the L1 desk lamp or S1 Bluetooth speaker?"
     assert not answer.llm_used and llm.calls == []
-    assert any("asking which one" in m for m in answer.guard_messages)
+    assert any("asking (no LLM call)" in m for m in answer.guard_messages)
+
+
+def test_pronoun_question_without_product_is_clarified(kb_dir: Path, index_dir: Path) -> None:
+    llm = FakeLLM(["should not be used"])
+    answer = make(kb_dir, index_dir, llm).answer("Does it have a battery?")
+    assert answer.text.startswith("Which product do you mean")
+    assert llm.calls == []
+    answer = make(kb_dir, index_dir, FakeLLM(["Yes, within seven days."])).answer(
+        "Can I return it?"
+    )
+    assert answer.llm_used
 
 
 def test_computed_total_reaches_prompt(kb_dir: Path, index_dir: Path) -> None:
@@ -139,6 +150,36 @@ def test_output_guard_falls_back_to_safe_reply(kb_dir: Path, index_dir: Path) ->
     assert answer.text == NOT_AVAILABLE_REPLY
     assert speaker.spoken == [NOT_AVAILABLE_REPLY]
     assert any("safe reply" in m for m in answer.guard_messages)
+
+
+def test_contradiction_triggers_one_retry(kb_dir: Path, index_dir: Path) -> None:
+    llm = FakeLLM(
+        [
+            "Yes, you can report it. It is past the 48-hour window, so you cannot report it.",
+            "No, it is past the 48-hour window for reporting damage.",
+        ]
+    )
+    answer = make(kb_dir, index_dir, llm).answer(
+        "My item arrived damaged 3 days ago. Can I report it?"
+    )
+    assert len(llm.calls) == 2 and "REMINDER: Your previous reply began" in llm.calls[1][1]
+    assert answer.text.startswith("No, it is past")
+    assert any("starts with Yes but concludes No" in m for m in answer.guard_messages)
+
+
+def test_persistent_contradiction_drops_opening(kb_dir: Path, index_dir: Path) -> None:
+    bad = "Yes, you can report it. It is past the 48-hour window, so you cannot report it."
+    answer = make(kb_dir, index_dir, FakeLLM([bad, bad])).answer("Damaged 3 days ago, report?")
+    assert answer.text == "It is past the 48-hour window, so you cannot report it."
+    assert any("dropped its opening sentence" in m for m in answer.guard_messages)
+
+
+def test_both_products_total_reaches_prompt(kb_dir: Path, index_dir: Path) -> None:
+    llm = FakeLLM(["PKR 6,700 in total."])
+    make(kb_dir, index_dir, llm).answer("What's the total for both products with delivery?")
+    user = llm.calls[0][1]
+    assert "COMPUTED: L1 desk lamp PKR 2,500 + S1 Bluetooth speaker PKR 4,000" in user
+    assert "+ delivery PKR 200 = PKR 6,700." in user
 
 
 def test_reload_picks_up_changed_fact(kb_dir: Path, index_dir: Path) -> None:

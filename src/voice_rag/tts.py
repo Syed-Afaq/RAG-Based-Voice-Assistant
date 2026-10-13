@@ -66,7 +66,7 @@ def _release_memory() -> None:
         ctypes.CDLL("libc.so.6").malloc_trim(0)
 
 
-def _load_kokoro(voice: str, speed: float) -> Synthesizer:
+def _load_kokoro(voice: str, speed: float, threads: int | None) -> Synthesizer:
     """Build the real Kokoro synthesizer. Imports torch, so it is only called on demand.
 
     The weights are looked up in the Hugging Face cache first (no network round-trip, no rate-limit
@@ -78,6 +78,8 @@ def _load_kokoro(voice: str, speed: float) -> Synthesizer:
         import torch
         from kokoro import KPipeline
 
+        if threads is not None:
+            torch.set_num_threads(threads)
         pipeline: Any
         if "HF_HUB_OFFLINE" in os.environ:
             pipeline = KPipeline(lang_code="a", repo_id=KOKORO_REPO)
@@ -119,7 +121,9 @@ class KokoroSpeaker:
         self.audio_dir = audio_dir or settings.audio_dir
         self.audio_dir.mkdir(parents=True, exist_ok=True)
         started = time.perf_counter()
-        self._synthesize = synthesizer or _load_kokoro(settings.tts_voice, settings.tts_speed)
+        self._synthesize = synthesizer or _load_kokoro(
+            settings.tts_voice, settings.tts_speed, settings.num_thread
+        )
         self.load_seconds = time.perf_counter() - started
         self._player = shutil.which(PLAYER)
         if self._player is None:

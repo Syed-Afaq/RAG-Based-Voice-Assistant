@@ -10,7 +10,12 @@ from voice_rag.config import Settings
 from voice_rag.embedder import Embedder
 from voice_rag.index import Index, RefreshReport, load_or_build
 from voice_rag.llm import LLM
-from voice_rag.products import Product, derive_products
+from voice_rag.products import (
+    Product,
+    derive_products,
+    mentioned_products,
+    product_vocabulary,
+)
 from voice_rag.retrieve import retrieve
 from voice_rag.tts import Speaker
 from voice_rag.types import Answer, Timings
@@ -36,6 +41,7 @@ class Pipeline:
         self.speaker = speaker
         self.index: Index
         self.products: list[Product]
+        self.product_vocab: frozenset[str]
         self.last_refresh: RefreshReport
         self.reload(force=False)
 
@@ -45,6 +51,7 @@ class Pipeline:
             self.settings.kb_dir, self.settings.index_dir, self.embedder, force=force
         )
         self.products = derive_products(self.index.chunks)
+        self.product_vocab = product_vocabulary(self.index.chunks, self.products)
         self.last_refresh = report
         return report
 
@@ -60,7 +67,10 @@ class Pipeline:
         for label in injection:
             guard_messages.append(f"injection pattern: {label}; documents take precedence")
 
-        result = retrieve(self.index, self.embedder, question, s.top_k, s.min_similarity)
+        anchors = [p.code for p in mentioned_products(question, self.products)]
+        result = retrieve(
+            self.index, self.embedder, question, s.top_k, s.min_similarity, anchor_terms=anchors
+        )
         timings.retrieval = result.seconds
         if result.low_confidence:
             guard_messages.append(
@@ -68,10 +78,8 @@ class Pipeline:
                 f"using all {result.total_chunks} passages"
             )
 
-        if guards.needs_clarification(question, self.products):
-            guard_messages.append(
-                "price question without a product: asking which one (no LLM call)"
-            )
+        if guards.needs_clarification(question, self.products, self.product_vocab):
+            guard_messages.append("question needs a product and names none: asking (no LLM call)")
             text = guards.clarification_reply(self.products)
             answer = Answer(question, text, result.hits, guard_messages, timings, llm_used=False)
             return self._finish(answer, speak, started)
@@ -100,8 +108,11 @@ class Pipeline:
         text = response.text
 
         check = guards.check_output(text, supporting, question)
-        if not check.ok:
+        contradiction = guards.contradicts_itself(text)
+        if not check.ok or contradiction:
             guard_messages.extend(f"output guard: {m}; regenerating once" for m in check.messages)
+            if contradiction:
+                guard_messages.append(f"output guard: {contradiction}; regenerating once")
             figures = guards.unsupported_figures(text, supporting, question)
             retry_user = prompt.build_user_message(
                 question,
@@ -111,12 +122,18 @@ class Pipeline:
                 injection_flagged=bool(injection),
                 leak_flagged=leak,
                 retry_figures=figures,
+                retry_contradiction=contradiction,
             )
             retry = self.llm.generate(prompt.SYSTEM_PROMPT, retry_user)
             timings.llm += retry.seconds
             check = guards.check_output(retry.text, supporting, question)
             if check.ok:
                 text = retry.text
+                if guards.contradicts_itself(text):
+                    text = guards.drop_contradictory_opening(text)
+                    guard_messages.append(
+                        "output guard: retry still contradicts itself; dropped its opening sentence"
+                    )
             else:
                 guard_messages.append("output guard: retry still unsupported; using safe reply")
                 text = NOT_AVAILABLE_REPLY

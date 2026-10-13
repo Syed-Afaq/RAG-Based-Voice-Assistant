@@ -11,6 +11,7 @@ KB would instead use query rewriting or a cross-encoder re-ranker here.
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 
@@ -67,14 +68,28 @@ def search(index: Index, question: str, query_vector: NDArray[np.float32]) -> li
 
 
 def retrieve(
-    index: Index, embedder: Embedder, question: str, top_k: int, min_similarity: float
+    index: Index,
+    embedder: Embedder,
+    question: str,
+    top_k: int,
+    min_similarity: float,
+    anchor_terms: list[str] | None = None,
 ) -> RetrievalResult:
-    """Embed the question and rank all chunks; return top-k, or everything on low confidence."""
+    """Embed the question and rank all chunks; return top-k, or everything on low confidence.
+
+    ``anchor_terms`` (product codes the question refers to) guarantee that the passage defining each
+    one is included even when it falls outside the top-k, e.g. "the total for both products" names
+    no product word, yet needs both price sentences.
+    """
     started = time.perf_counter()
     ranked = search(index, question, embedder.embed_query(question))
     best = max((r.score for r in ranked), default=0.0)
     low = best < min_similarity
     hits = ranked if low else ranked[:top_k]
+    for term in anchor_terms or []:
+        pattern = re.compile(rf"\b{re.escape(term)}\b")
+        if not any(pattern.search(h.chunk.text) for h in hits):
+            hits.extend(r for r in ranked[top_k:] if pattern.search(r.chunk.text))
     return RetrievalResult(
         hits=hits,
         seconds=time.perf_counter() - started,

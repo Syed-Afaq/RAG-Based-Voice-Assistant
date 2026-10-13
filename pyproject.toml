@@ -44,7 +44,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["D"]
-"scripts/*" = ["D"]
+"scripts/*" = ["D", "E501"]  # report templates have long f-strings
 
 [tool.mypy]
 python_version = "3.12"

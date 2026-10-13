@@ -16,6 +16,7 @@ from voice_rag.types import Chunk
 
 _CODE = re.compile(r"\b([A-Z]\d+)\b((?:\s+[A-Za-z][\w-]*){0,4})")
 # Words that cannot be part of a product name; they mark where the name stops.
+_ALL_PRODUCTS = re.compile(r"\b(both|all|every|each)\b.{0,12}\b(product|item)s?\b", re.IGNORECASE)
 _STOP_WORDS = frozenset({"costs", "cost", "is", "has", "have", "uses", "comes", "and", "or", "the"})
 MAX_NAME_WORDS = 3
 
@@ -63,6 +64,30 @@ def derive_products(chunks: list[Chunk]) -> list[Product]:
 
 
 def mentioned_products(question: str, products: list[Product]) -> list[Product]:
-    """Products whose code or head noun (singular or plural) appears in the question."""
+    """Products whose code or head noun (singular or plural) appears in the question.
+
+    "Both products" / "all items" counts as naming every product.
+    """
+    if _ALL_PRODUCTS.search(question):
+        return list(products)
     tokens = set(tokenize(question))
     return [p for p in products if p.aliases & tokens]
+
+
+def product_vocabulary(chunks: list[Chunk], products: list[Product]) -> frozenset[str]:
+    """Stemmed words that occur only in passages naming a product ("battery", "usb", "power").
+
+    Used to recognise a pronoun question about a product attribute ("Does it have a battery?")
+    without hardcoding attribute names: words that also appear in non-product passages (such as
+    "cost" or "hours") are excluded so they do not trigger a clarification.
+    """
+    codes = {p.code for p in products}
+    product_words: set[str] = set()
+    other_words: set[str] = set()
+    for chunk in chunks:
+        words = set(tokenize(chunk.text, drop_stop_words=True))
+        if any(re.search(rf"\b{re.escape(code)}\b", chunk.text) for code in codes):
+            product_words |= words
+        else:
+            other_words |= words
+    return frozenset(product_words - other_words - {c.lower() for c in codes})
