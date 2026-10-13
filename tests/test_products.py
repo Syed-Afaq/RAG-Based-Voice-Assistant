@@ -8,6 +8,7 @@ from voice_rag.products import (
     derive_products,
     mentioned_products,
     product_vocabulary,
+    resolve_pronoun,
 )
 from voice_rag.types import Chunk
 
@@ -54,3 +55,12 @@ def test_product_vocabulary_is_specific_to_product_passages(kb_dir: Path) -> Non
     assert {"batter", "usb", "power", "bluetooth"} <= vocab
     assert "cost" not in vocab and "hour" not in vocab and "pkr" not in vocab  # shared words
     assert "l1" not in vocab  # codes are handled by mentioned_products
+
+
+def test_resolve_pronoun() -> None:
+    lamp = Product("L1", "desk lamp")
+    assert resolve_pronoun("How much does it cost?", lamp) == "How much does the L1 desk lamp cost?"
+    assert resolve_pronoun("What is its price?", lamp) == "What is the L1 desk lamp's price?"
+    assert (
+        resolve_pronoun("What's the price?", lamp) == "What's the price? (about the L1 desk lamp)"
+    )

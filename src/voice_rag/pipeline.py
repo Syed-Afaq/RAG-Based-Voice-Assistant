@@ -15,6 +15,7 @@ from voice_rag.products import (
     derive_products,
     mentioned_products,
     product_vocabulary,
+    resolve_pronoun,
 )
 from voice_rag.retrieve import retrieve
 from voice_rag.tts import Speaker
@@ -42,6 +43,8 @@ class Pipeline:
         self.index: Index
         self.products: list[Product]
         self.product_vocab: frozenset[str]
+        # Conversation memory: the single product the previous question named, if any.
+        self.last_product: Product | None = None
         self.last_refresh: RefreshReport
         self.reload(force=False)
 
@@ -52,12 +55,14 @@ class Pipeline:
         )
         self.products = derive_products(self.index.chunks)
         self.product_vocab = product_vocabulary(self.index.chunks, self.products)
+        self.last_product = None  # products may have changed
         self.last_refresh = report
         return report
 
     def answer(self, question: str, speak: bool = True) -> Answer:
         """Run the full pipeline for one question."""
         started = time.perf_counter()
+        original = question
         timings = Timings()
         guard_messages: list[str] = []
         s = self.settings
@@ -67,7 +72,18 @@ class Pipeline:
         for label in injection:
             guard_messages.append(f"injection pattern: {label}; documents take precedence")
 
-        anchors = [p.code for p in mentioned_products(question, self.products)]
+        # Follow-up handling: "How much does it cost?" after a question about the lamp.
+        if self.last_product is not None and guards.needs_clarification(
+            question, self.products, self.product_vocab
+        ):
+            question = resolve_pronoun(question, self.last_product)
+            guard_messages.append(
+                f"no product named; using {self.last_product.label} from the previous question: "
+                f"{question!r}"
+            )
+        mentioned = mentioned_products(question, self.products)
+        self.last_product = mentioned[0] if len(mentioned) == 1 else None
+        anchors = [p.code for p in mentioned]
         result = retrieve(
             self.index, self.embedder, question, s.top_k, s.min_similarity, anchor_terms=anchors
         )
@@ -81,7 +97,7 @@ class Pipeline:
         if guards.needs_clarification(question, self.products, self.product_vocab):
             guard_messages.append("question needs a product and names none: asking (no LLM call)")
             text = guards.clarification_reply(self.products)
-            answer = Answer(question, text, result.hits, guard_messages, timings, llm_used=False)
+            answer = Answer(original, text, result.hits, guard_messages, timings, llm_used=False)
             return self._finish(answer, speak, started)
 
         facts = calc.parse_facts(result.hits, self.products)
@@ -138,7 +154,7 @@ class Pipeline:
                 guard_messages.append("output guard: retry still unsupported; using safe reply")
                 text = NOT_AVAILABLE_REPLY
 
-        answer = Answer(question, text, result.hits, guard_messages, timings, llm_used=True)
+        answer = Answer(original, text, result.hits, guard_messages, timings, llm_used=True)
         return self._finish(answer, speak, started)
 
     def _finish(self, answer: Answer, speak: bool, started: float) -> Answer:

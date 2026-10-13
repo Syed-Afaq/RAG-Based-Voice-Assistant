@@ -16,6 +16,7 @@ from voice_rag.types import Chunk
 
 _CODE = re.compile(r"\b([A-Z]\d+)\b((?:\s+[A-Za-z][\w-]*){0,4})")
 # Words that cannot be part of a product name; they mark where the name stops.
+_PRONOUN = re.compile(r"\b(its|it|this one|that one|this|that|one)\b", re.IGNORECASE)
 _ALL_PRODUCTS = re.compile(r"\b(both|all|every|each)\b.{0,12}\b(product|item)s?\b", re.IGNORECASE)
 _STOP_WORDS = frozenset({"costs", "cost", "is", "has", "have", "uses", "comes", "and", "or", "the"})
 MAX_NAME_WORDS = 3
@@ -91,3 +92,17 @@ def product_vocabulary(chunks: list[Chunk], products: list[Product]) -> frozense
         else:
             other_words |= words
     return frozenset(product_words - other_words - {c.lower() for c in codes})
+
+
+def resolve_pronoun(question: str, product: Product) -> str:
+    """Rewrite "How much does it cost?" as "How much does the L1 desk lamp cost?".
+
+    The first pronoun is replaced; "its" becomes a possessive. A question with no pronoun gets the
+    product appended in brackets so the model still knows the subject.
+    """
+    match = _PRONOUN.search(question)
+    if match is None:
+        return f"{question.rstrip()} (about the {product.label})"
+    word = match.group(1).lower()
+    replacement = f"the {product.label}'s" if word == "its" else f"the {product.label}"
+    return question[: match.start()] + replacement + question[match.end() :]

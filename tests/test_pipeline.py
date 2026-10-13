@@ -197,3 +197,32 @@ def test_reload_picks_up_changed_fact(kb_dir: Path, index_dir: Path) -> None:
 def test_audio_name() -> None:
     assert audio_name("Does the L1 lamp have a battery?") == "does-the-l1-lamp-have-a-battery"
     assert audio_name("???") == "answer"
+
+
+def test_follow_up_uses_last_product(kb_dir: Path, index_dir: Path) -> None:
+    llm = FakeLLM(["No built-in battery.", "The L1 desk lamp costs PKR 2,500."])
+    pipeline = make(kb_dir, index_dir, llm)
+    pipeline.answer("Does the L1 lamp have a battery?")
+    answer = pipeline.answer("How much does it cost?")
+    assert answer.llm_used and len(llm.calls) == 2
+    assert "QUESTION: How much does the L1 desk lamp cost?" in llm.calls[1][1]
+    assert answer.question == "How much does it cost?"  # the original is what gets displayed
+    assert any("from the previous question" in m for m in answer.guard_messages)
+
+
+def test_first_question_without_product_still_clarifies(kb_dir: Path, index_dir: Path) -> None:
+    llm = FakeLLM(["unused"])
+    answer = make(kb_dir, index_dir, llm).answer("How much does it cost?")
+    assert answer.text.startswith("Which product do you mean") and llm.calls == []
+
+
+def test_memory_cleared_by_reload_and_by_two_products(kb_dir: Path, index_dir: Path) -> None:
+    llm = FakeLLM(["ok"])
+    pipeline = make(kb_dir, index_dir, llm)
+    pipeline.answer("Does the L1 lamp have a battery?")
+    assert pipeline.last_product is not None
+    pipeline.reload()
+    assert pipeline.last_product is None
+    pipeline.answer("Do the lamp and the speaker ship together?")
+    assert pipeline.last_product is None  # ambiguous: two products named
+    assert pipeline.answer("How much does it cost?").text.startswith("Which product")

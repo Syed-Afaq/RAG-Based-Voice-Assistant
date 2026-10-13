@@ -67,13 +67,14 @@ flowchart LR
 - Automatic re-indexing when a KB file changes, plus `/reload` inside the session and `--reindex`.
 - Hybrid retrieval with explainable output: cosine score and BM25 rank per passage.
 - Arithmetic in code: totals for any mix of products, quantities and delivery, never by the model.
-- Deterministic clarification ("Which product do you mean?") without a model call.
+- Deterministic clarification ("Which product do you mean?") without a model call, and a
+  one-turn memory so a follow-up "How much does it cost?" resolves to the product just discussed.
 - Injection and override attempts are flagged and answered with the documented policy.
 - Output guard against invented figures, plus a self-contradiction check on Yes/No answers.
 - Per-question timings (retrieval, LLM, TTS generation, total) and separate model-loading times.
 - Nothing about the documents is hardcoded: products, prices, cities and durations all come from
   `kb/` at run time. Change a file and the answers change.
-- Typed, tested, linted: 89 unit tests with fakes (no models needed), ruff, mypy strict, CI.
+- Typed, tested, linted: 93 unit tests with fakes (no models needed), ruff, mypy strict, CI.
 
 ## Setup (Linux / WSL2)
 
@@ -188,7 +189,10 @@ terminal as `guard: ...` lines.
 - **Clarification rule.** A price question with no subject ("How much does it cost?"), or a
   pronoun question about a product attribute ("Does it have a battery?"), is answered with "Which
   product do you mean: the L1 desk lamp or S1 Bluetooth speaker?" without calling the model. The
-  product list and the attribute vocabulary are derived from the KB.
+  product list and the attribute vocabulary are derived from the KB. If the previous question
+  named exactly one product, the pronoun is resolved to it instead ("How much does it cost?"
+  becomes "How much does the L1 desk lamp cost?" for retrieval, calculation and the prompt; the
+  terminal shows the substitution as a guard line). The memory is cleared by `/reload`.
 - **Low-confidence fallback.** If the best cosine score is below 0.55 the question is probably
   phrased in words the KB never uses, or is off-topic. All passages are sent and the prompt rules
   decide. Measured on this KB: on-topic questions score 0.58 to 0.83, off-topic ones 0.46 to 0.49.
@@ -376,15 +380,15 @@ from Ollama's cache (0.2 s instead of 5.6 s).
 - Figures typed by the user are accepted by the output guard (so "10 days ago" can be answered),
   which means a leading question like "Is there a one-year warranty?" is caught by the prompt
   rules rather than the guard. The 4B model handled it in testing.
-- No conversation memory: each question stands alone, so "it" after a product question still asks
-  which product.
+- Conversation memory is one product deep: "it" resolves to the single product named in the
+  previous question, nothing older, and never to a city or policy. Fragments without a pronoun
+  or a price word ("And with delivery to Lahore?") are not resolved and are answered on their own.
 - English only, one voice, CPU only. Per-question latency is 15 to 35 s with audio on this laptop.
 
 ## Future work
 
 - Sentence-by-sentence synthesis so audio starts before the whole answer is synthesised (and a
   "time to first audio" metric).
-- A small conversation memory that resolves "it" to the last product mentioned.
 - Kokoro through ONNX Runtime to cut about 600 MB of RAM, or Qwen3 with a smaller KV cache.
 - A cross-encoder re-ranker and query rewriting if the KB grows beyond a few dozen sentences.
 - Streaming the LLM output to the terminal while it generates.
