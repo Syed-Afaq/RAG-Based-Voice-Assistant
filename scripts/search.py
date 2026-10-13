@@ -42,15 +42,21 @@ def main() -> None:
 
     questions = sys.argv[1:] or SCENARIOS
     for question in questions:
-        hits, seconds = retrieve(index, embedder, question, settings.top_k)
-        table = Table(
-            title=f"{question}  [dim]({seconds * 1000:.0f} ms)[/dim]", title_justify="left"
-        )
-        table.add_column("score", justify="right")
+        result = retrieve(index, embedder, question, settings.top_k, settings.min_similarity)
+        title = f"{question}  [dim]({result.seconds * 1000:.0f} ms)[/dim]"
+        table = Table(title=title, title_justify="left")
+        table.add_column("cosine", justify="right")
+        table.add_column("bm25", justify="right")
         table.add_column("file")
         table.add_column("passage")
-        for hit in hits:
-            table.add_row(f"{hit.score:.3f}", hit.chunk.source, hit.chunk.text)
+        for hit in result.hits:
+            rank = f"#{hit.bm25_rank}" if hit.bm25_rank else "-"
+            table.add_row(f"{hit.score:.3f}", rank, hit.chunk.source, hit.chunk.text)
+        if result.low_confidence:
+            console.print(
+                f"[yellow]guard: low retrieval confidence ({result.best_cosine:.3f}), "
+                f"using all {result.total_chunks} passages[/yellow]"
+            )
         console.print(table)
 
 

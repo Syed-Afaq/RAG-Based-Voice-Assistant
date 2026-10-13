@@ -15,8 +15,12 @@ _TENS = {
     "eighty": 80, "ninety": 90,
 }  # fmt: skip
 
+NUMBER_WORDS: dict[str, int] = {**_UNITS, **_TENS}
+
 # Digits not glued to a letter, so "L1" and "S1" are product codes rather than the number 1.
 _DIGITS = re.compile(r"(?<![A-Za-z0-9])\d[\d,]*(?:\.\d+)?(?![A-Za-z0-9])")
+# "PKR 2,500", "USD 10.50": a three-letter currency code followed by an amount.
+_AMOUNT = re.compile(r"\b([A-Z]{3})\s?(\d[\d,]*(?:\.\d+)?)\b")
 _WORDS = re.compile(
     r"\b("
     + "|".join(_TENS)
@@ -43,6 +47,11 @@ def extract_numbers(text: str) -> set[float]:
         else:
             found.add(float(_TENS[tens.lower()] + (_UNITS[unit.lower()] if unit else 0)))
     return found
+
+
+def extract_amounts(text: str) -> list[tuple[str, float]]:
+    """Currency amounts in ``text`` as ``(currency, value)`` pairs, in order of appearance."""
+    return [(m.group(1), parse_number(m.group(2))) for m in _AMOUNT.finditer(text)]
 
 
 def format_amount(value: float) -> str:

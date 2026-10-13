@@ -26,7 +26,7 @@ class Settings:
 
     # Retrieval
     top_k: int = 5  # 9 KB sentences; 5 keeps the delivery-fee passage in scope for scenario 6
-    min_similarity: float = 0.50  # top-1 floor; on-topic >= 0.58, off-topic <= 0.49 (see README)
+    min_similarity: float = 0.55  # best-cosine floor; below it all passages are sent (see README)
 
     # Generation: deterministic and memory-lean by default
     temperature: float = 0.0

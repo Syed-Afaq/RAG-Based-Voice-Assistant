@@ -16,10 +16,12 @@ class Chunk:
 
 @dataclass(frozen=True)
 class Retrieved:
-    """A chunk returned by similarity search together with its cosine score."""
+    """A chunk returned by retrieval with its cosine score and, when it matched, its BM25 rank."""
 
     chunk: Chunk
-    score: float
+    score: float  # cosine similarity to the question
+    bm25_rank: int | None = None  # 1 = best lexical match; None = no keyword overlap
+    fused: float = 0.0  # reciprocal-rank-fusion score used for the final order
 
 
 @dataclass(frozen=True)

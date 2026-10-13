@@ -7,27 +7,35 @@ from voice_rag.index import build_index
 from voice_rag.retrieve import retrieve, search
 
 
-def test_search_orders_by_similarity_and_limits_k(kb_dir: Path) -> None:
+def test_search_fuses_cosine_and_bm25(kb_dir: Path) -> None:
     embedder = FakeEmbedder()
     index = build_index(kb_dir, embedder)
-    hits = search(index, embedder.embed_query("delivery to Islamabad working days"), top_k=2)
-    assert len(hits) == 2
-    assert hits[0].score >= hits[1].score
-    assert hits[0].chunk.source == "delivery.txt"
-    assert "Islamabad" in hits[0].chunk.text
+    question = "delivery to Islamabad working days"
+    ranked = search(index, question, embedder.embed_query(question))
+    assert len(ranked) == len(index.chunks)
+    assert ranked[0].chunk.source == "delivery.txt"
+    assert "Islamabad" in ranked[0].chunk.text
+    assert ranked[0].bm25_rank == 1
+    assert ranked[0].fused >= ranked[1].fused >= ranked[-1].fused
+    # A chunk sharing no token with the question has no BM25 rank.
+    assert any(r.bm25_rank is None for r in ranked)
 
 
-def test_retrieve_returns_timing_and_filenames(kb_dir: Path) -> None:
+def test_retrieve_limits_to_top_k_when_confident(kb_dir: Path) -> None:
     embedder = FakeEmbedder()
     index = build_index(kb_dir, embedder)
-    hits, seconds = retrieve(index, embedder, "damaged items reported hours", top_k=3)
-    assert seconds >= 0.0
-    assert hits[0].chunk.source == "returns.txt"
-    assert "48 hours" in hits[0].chunk.text
+    result = retrieve(index, embedder, "damaged items reported hours", top_k=3, min_similarity=0.0)
+    assert len(result.hits) == 3
+    assert result.seconds >= 0.0
+    assert not result.low_confidence
+    assert result.hits[0].chunk.source == "returns.txt"
+    assert "48 hours" in result.hits[0].chunk.text
 
 
-def test_top_k_larger_than_index_is_safe(kb_dir: Path) -> None:
+def test_low_confidence_falls_back_to_all_chunks(kb_dir: Path) -> None:
     embedder = FakeEmbedder()
     index = build_index(kb_dir, embedder)
-    hits = search(index, embedder.embed_query("anything"), top_k=50)
-    assert len(hits) == len(index.chunks)
+    result = retrieve(index, embedder, "zebra quantum tuesday", top_k=3, min_similarity=0.5)
+    assert result.low_confidence
+    assert result.best_cosine < 0.5
+    assert len(result.hits) == result.total_chunks == len(index.chunks)

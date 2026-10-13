@@ -3,13 +3,12 @@ from __future__ import annotations
 from voice_rag.guards import (
     check_output,
     clarification_reply,
+    derivable_amounts,
     detect_injection,
-    is_off_topic,
     needs_clarification,
     unsupported_figures,
 )
 from voice_rag.products import Product
-from voice_rag.types import Chunk, Retrieved
 
 PRODUCTS = [Product("L1", "desk lamp"), Product("S1", "Bluetooth speaker")]
 CONTEXT = [
@@ -59,19 +58,31 @@ def test_clarification_reply_lists_kb_products() -> None:
     assert clarification_reply([]) == "Which product do you mean?"
 
 
-def test_off_topic_uses_best_score() -> None:
-    hits = [Retrieved(Chunk("x", "a.txt", 0), 0.45), Retrieved(Chunk("y", "a.txt", 1), 0.40)]
-    assert is_off_topic(hits, min_similarity=0.50)
-    assert not is_off_topic(hits, min_similarity=0.40)
-    assert is_off_topic([], min_similarity=0.0)
-
-
 def test_output_guard_accepts_supported_figures() -> None:
     answer = "The L1 desk lamp costs PKR 2,700 with delivery, arriving in 2 to 3 working days."
     computed = "COMPUTED: L1 desk lamp PKR 2,500 + delivery PKR 200 = PKR 2,700."
     assert unsupported_figures(answer, [*CONTEXT, computed]) == []
     assert unsupported_figures("Report damage within forty-eight hours, 7 days.", CONTEXT) == []
     assert unsupported_figures("Battery lasts 6 hours.", CONTEXT) == []
+
+
+def test_output_guard_accepts_derived_totals() -> None:
+    """A correct total the model worked out itself must not be rejected."""
+    assert unsupported_figures("The lamp with delivery is PKR 2,700.", CONTEXT) == []
+    assert unsupported_figures("Both products together cost PKR 6,500.", CONTEXT) == []
+    assert unsupported_figures("Lamp, speaker and delivery: PKR 6,700.", CONTEXT) == []
+    assert unsupported_figures("The speaker is PKR 1,500 more than the lamp.", CONTEXT) == []
+    two_lamps = "Two lamps cost PKR 5,000, or PKR 5,200 delivered."
+    assert unsupported_figures(two_lamps, CONTEXT, question="How much for two lamps?") == []
+
+
+def test_quantity_scaling_needs_the_question() -> None:
+    assert unsupported_figures("Two lamps cost PKR 5,000.", CONTEXT) == ["5000"]
+
+
+def test_durations_are_never_combined() -> None:
+    assert 1.0 not in derivable_amounts(CONTEXT)  # 3 - 2 must not make "one year" acceptable
+    assert unsupported_figures("Delivery takes 11 days in total.", CONTEXT) == ["11"]  # 2+3+6
 
 
 def test_output_guard_catches_invented_warranty() -> None:

@@ -5,22 +5,28 @@ Input side:
       but the prompt gets a note that the documents take precedence.
     * ``needs_clarification``: a price question with no product and no other subject gets a
       clarifying reply without calling the model.
-    * ``is_off_topic``: a coarse filter on the best retrieval score. It cannot detect a missing
-      detail about a known product (the product sentence still scores high); that job belongs to
-      the prompt rules and the output guard.
 
 Output side:
-    * ``unsupported_figures``: every number in the answer must appear in the retrieved passages or
-      in a COMPUTED line, otherwise the answer is not spoken.
+    * ``unsupported_figures``: every number in the answer must be supported by the retrieved
+      passages or the COMPUTED line, otherwise the answer is not spoken. "Supported" means it
+      appears literally, or it is a sum/difference of up to three currency amounts from the
+      context, optionally multiplied by a small quantity stated in the question. That lets a
+      correct total the model worked out pass, while an invented "one year warranty" still fails
+      (durations are never combined, so 1 cannot be derived from "2–3 days").
+
+Off-topic questions are not rejected here: retrieval falls back to sending every passage when
+confidence is low, and the prompt rules tell the model to say when the documents do not answer.
 """
 
 from __future__ import annotations
 
 import re
+from itertools import combinations
+from itertools import product as cartesian
 
-from voice_rag.numbers import extract_numbers
+from voice_rag.numbers import extract_amounts, extract_numbers
 from voice_rag.products import Product, mentioned_products
-from voice_rag.types import GuardResult, Retrieved
+from voice_rag.types import GuardResult
 
 _INJECTION_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     (
@@ -81,23 +87,42 @@ def clarification_reply(products: list[Product]) -> str:
     return f"Which product do you mean: the {listed}?"
 
 
-def is_off_topic(retrieved: list[Retrieved], min_similarity: float) -> bool:
-    """True when even the best passage scores below the configured floor."""
-    return not retrieved or retrieved[0].score < min_similarity
+MAX_QUANTITY = 20
+MAX_TERMS = 3
 
 
-def unsupported_figures(answer: str, supporting_texts: list[str]) -> list[str]:
-    """Numbers in ``answer`` that occur in none of ``supporting_texts`` (as digits or words)."""
+def _question_quantities(question: str) -> set[int]:
+    """Small whole numbers stated in the question, e.g. "two lamps" -> {2}."""
+    return {int(n) for n in extract_numbers(question) if n == int(n) and 1 < n <= MAX_QUANTITY}
+
+
+def derivable_amounts(supporting_texts: list[str], question: str = "") -> set[float]:
+    """Totals a correct answer might contain: sums/differences of up to three context amounts."""
+    base = {value for text in supporting_texts for _, value in extract_amounts(text)}
+    scaled = base | {value * q for value in base for q in _question_quantities(question)}
+    derived: set[float] = set(scaled)
+    for n in range(2, MAX_TERMS + 1):
+        for terms in combinations(sorted(scaled), n):
+            for signs in cartesian((1, -1), repeat=n - 1):
+                total = abs(terms[0] + sum(s * t for s, t in zip(signs, terms[1:], strict=True)))
+                if total > 0:
+                    derived.add(total)
+    return derived
+
+
+def unsupported_figures(answer: str, supporting_texts: list[str], question: str = "") -> list[str]:
+    """Numbers in ``answer`` that are neither in ``supporting_texts`` nor derivable from them."""
     allowed: set[float] = set()
     for text in supporting_texts:
         allowed |= extract_numbers(text)
+    allowed |= derivable_amounts(supporting_texts, question)
     unsupported = sorted(extract_numbers(answer) - allowed)
     return [f"{n:g}" for n in unsupported]
 
 
-def check_output(answer: str, supporting_texts: list[str]) -> GuardResult:
+def check_output(answer: str, supporting_texts: list[str], question: str = "") -> GuardResult:
     """Wrap :func:`unsupported_figures` in a :class:`GuardResult` with a terminal message."""
-    bad = unsupported_figures(answer, supporting_texts)
+    bad = unsupported_figures(answer, supporting_texts, question)
     if not bad:
         return GuardResult(ok=True)
     return GuardResult(

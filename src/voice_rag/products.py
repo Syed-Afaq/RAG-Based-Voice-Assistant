@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from voice_rag.lexical import stem, tokenize
 from voice_rag.types import Chunk
 
 _CODE = re.compile(r"\b([A-Z]\d+)\b((?:\s+[A-Za-z][\w-]*){0,4})")
@@ -33,11 +34,11 @@ class Product:
 
     @property
     def aliases(self) -> frozenset[str]:
-        """Lowercase tokens that identify this product in a question (code and head noun)."""
+        """Stemmed lowercase tokens that identify this product in a question (code, head noun)."""
         words = self.name.lower().split()
         aliases = {self.code.lower()}
         if words:
-            aliases.add(words[-1])  # head noun: "lamp", "speaker"
+            aliases.add(stem(words[-1]))  # head noun: "lamp", "speaker"
         return frozenset(aliases)
 
 
@@ -62,6 +63,6 @@ def derive_products(chunks: list[Chunk]) -> list[Product]:
 
 
 def mentioned_products(question: str, products: list[Product]) -> list[Product]:
-    """Products whose code or head noun appears as a whole word in the question."""
-    tokens = set(re.findall(r"[a-z0-9]+", question.lower()))
+    """Products whose code or head noun (singular or plural) appears in the question."""
+    tokens = set(tokenize(question))
     return [p for p in products if p.aliases & tokens]

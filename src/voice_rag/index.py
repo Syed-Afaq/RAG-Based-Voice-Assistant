@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from voice_rag.embedder import Embedder
+from voice_rag.lexical import BM25
 from voice_rag.types import Chunk
 
 log = logging.getLogger(__name__)
@@ -64,6 +65,11 @@ class Index:
     embed_model: str
     hashes: dict[str, str]
     build_seconds: float = 0.0
+    lexical: BM25 = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        # BM25 statistics are cheap to derive, so they are rebuilt on load instead of persisted.
+        self.lexical = BM25([c.text for c in self.chunks])
 
     def __len__(self) -> int:
         return len(self.chunks)
