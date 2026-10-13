@@ -38,6 +38,8 @@ ignore = [
     "D107", # __init__ docstrings are optional (the class docstring covers it)
     "D203", # one-blank-line-before-class (conflicts with D211)
     "D213", # multi-line-summary-second-line (conflicts with D212)
+    "D401", # imperative mood: "True when ..." reads better for predicates
+    "SIM905", # a whitespace-separated word list is more readable than a literal
 ]
 
 [tool.ruff.lint.per-file-ignores]
