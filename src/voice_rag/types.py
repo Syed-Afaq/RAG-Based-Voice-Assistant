@@ -55,3 +55,4 @@ class Answer:
     timings: Timings
     llm_used: bool = True
     audio_path: str | None = None
+    spoken_text: str = ""  # the TTS-normalised form of ``text``

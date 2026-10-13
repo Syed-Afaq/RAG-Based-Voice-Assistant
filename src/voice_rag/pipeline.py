@@ -125,10 +125,12 @@ class Pipeline:
         return self._finish(answer, speak, started)
 
     def _finish(self, answer: Answer, speak: bool, started: float) -> Answer:
+        """Synthesize speech (not play it) when requested, then stamp the total time."""
         if speak and self.speaker is not None:
-            speech = self.speaker.speak(answer.text, audio_name(answer.question))
+            speech = self.speaker.synthesize(answer.text, audio_name(answer.question))
             answer.timings.tts = speech.synthesis_seconds
             answer.audio_path = str(speech.path) if speech.path else None
+            answer.spoken_text = speech.spoken_text
         answer.timings.total = time.perf_counter() - started
         return answer
 

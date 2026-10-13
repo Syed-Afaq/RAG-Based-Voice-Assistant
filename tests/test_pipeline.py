@@ -29,10 +29,15 @@ class FakeLLM:
 @dataclass
 class FakeSpeaker:
     spoken: list[str] = field(default_factory=list)
+    played: list[Path] = field(default_factory=list)
 
-    def speak(self, text: str, name: str) -> SpeechResult:
+    def synthesize(self, text: str, name: str) -> SpeechResult:
         self.spoken.append(text)
-        return SpeechResult(path=Path(f"/tmp/{name}.wav"), synthesis_seconds=0.02)
+        return SpeechResult(path=Path(f"/tmp/{name}.wav"), synthesis_seconds=0.02, spoken_text=text)
+
+    def play(self, path: Path) -> float:
+        self.played.append(path)
+        return 0.0
 
 
 def make(
@@ -66,7 +71,7 @@ def test_happy_path_speaks_answer_and_records_timings(kb_dir: Path, index_dir: P
     answer = make(kb_dir, index_dir, llm, speaker).answer("Does the L1 lamp have a battery?")
     assert answer.text.startswith("The L1 lamp has no built-in battery")
     assert answer.llm_used and len(llm.calls) == 1
-    assert speaker.spoken == [answer.text]
+    assert speaker.spoken == [answer.text] and speaker.played == []  # CLI plays after display
     assert answer.audio_path and answer.audio_path.endswith("does-the-l1-lamp-have-a-battery.wav")
     assert answer.timings.tts == 0.02 and answer.timings.total > 0
     assert {h.chunk.source for h in answer.retrieved} >= {"products.txt"}
