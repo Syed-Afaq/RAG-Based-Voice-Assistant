@@ -25,7 +25,7 @@ class Settings:
     embed_model: str = "nomic-embed-text"
 
     # Retrieval
-    top_k: int = 5  # 9 KB sentences; 5 keeps the delivery-fee passage in scope for scenario 6
+    top_k: int = 5  # the KB has 8 chunks; 5 keeps the delivery-fee passage in scope for scenario 6
     min_similarity: float = 0.55  # best-cosine floor; below it all passages are sent (see README)
 
     # Generation: deterministic and memory-lean by default

@@ -7,8 +7,8 @@ PIP := .venv/bin/pip
 setup: ## Create the venv and install runtime + dev dependencies
 	python3 -m venv .venv
 	$(PIP) install --upgrade pip
-	$(PIP) install torch --index-url https://download.pytorch.org/whl/cpu
-	$(PIP) install -r requirements.txt -r requirements-dev.txt
+	$(PIP) install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+	$(PIP) install -r requirements.txt -r requirements-tts.txt -r requirements-dev.txt
 	$(PIP) install -e .
 
 run: ## Start the interactive assistant
@@ -17,14 +17,14 @@ run: ## Start the interactive assistant
 ask: ## One-shot question, e.g. make ask Q="Does the L1 lamp have a battery?"
 	$(PY) -m voice_rag --ask "$(Q)"
 
-reindex: ## Force a rebuild of the local index
-	$(PY) -m voice_rag --reindex --ask "" --no-audio
+reindex: ## Force a rebuild of the local index (no TTS, no question)
+	$(PY) -m voice_rag --reindex --ask "" --no-tts
 
 test: ## Unit tests only (no models needed)
 	$(PY) -m pytest
 
-test-all: ## Unit + integration tests (needs Ollama running)
-	$(PY) -m pytest -m ""
+test-all: ## Unit + integration tests (needs Ollama running with the models pulled)
+	$(PY) -m pytest -m "" -o addopts=""
 
 lint: ## Ruff lint + format check
 	$(PY) -m ruff check .

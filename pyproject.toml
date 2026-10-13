@@ -13,10 +13,12 @@ dependencies = [
     "ollama",
     "numpy",
     "rich",
-    "kokoro",
     "soundfile",
     "python-dotenv",
 ]
+
+[project.optional-dependencies]
+tts = ["kokoro"]
 
 [project.scripts]
 voice-rag = "voice_rag.cli:main"
@@ -53,7 +55,7 @@ mypy_path = "src"
 packages = ["voice_rag"]
 # Third-party packages without type stubs.
 [[tool.mypy.overrides]]
-module = ["kokoro.*", "soundfile.*"]
+module = ["kokoro.*", "soundfile.*", "torch", "torch.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

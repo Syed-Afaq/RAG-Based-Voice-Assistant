@@ -1,0 +1,7 @@
+# Text-to-speech: Kokoro-82M through the `kokoro` package (needs torch).
+# Install CPU-only torch FIRST to avoid the multi-GB CUDA build:
+#   pip install torch==2.14.1 --index-url https://download.pytorch.org/whl/cpu
+kokoro==0.9.4
+# English tokenizer that kokoro's G2P (misaki) otherwise downloads on first use; pinned here so
+# setup is reproducible and later runs work offline.
+en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
