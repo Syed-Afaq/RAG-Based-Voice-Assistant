@@ -25,8 +25,8 @@ class Settings:
     embed_model: str = "nomic-embed-text"
 
     # Retrieval
-    top_k: int = 4
-    min_similarity: float = 0.35  # coarse off-topic filter only; calibrated in results/RESULTS.md
+    top_k: int = 5  # 9 KB sentences; 5 keeps the delivery-fee passage in scope for scenario 6
+    min_similarity: float = 0.50  # top-1 floor; on-topic >= 0.58, off-topic <= 0.49 (see README)
 
     # Generation: deterministic and memory-lean by default
     temperature: float = 0.0
